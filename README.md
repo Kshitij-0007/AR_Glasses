@@ -1,51 +1,92 @@
-# Project: AR_Glasses
-Lightweight AR-style text scanner + translator prototype (CPU-friendly, multithreaded).
+# AR Glasses - Optimized for Raspberry Pi
 
-## Features
-- Camera capture (OpenCV)
-- CPU OCR via Tesseract (pytesseract)
-- Simple translation using `googletrans`
-- Multithreaded pipeline: Capture -> OCR workers -> Translator -> Display
-- Designed to run on CPU-only systems (desktop and Raspberry Pi)
+Real-time text recognition and translation system optimized for Raspberry Pi performance.
 
-## Files
-- main.py
-- capture.py
-- ocr.py
-- translate.py
-- display.py
-- requirements.txt
+## Key Optimizations
 
-## Setup (Desktop)
-1. Install Tesseract:
-   - Ubuntu/Debian: `sudo apt update && sudo apt install -y tesseract-ocr libtesseract-dev`
-   - Windows: install from https://github.com/tesseract-ocr/tesseract
-2. Python deps:
+### Performance Improvements
+- **Reduced Resolution**: 640x480 for optimal Pi performance
+- **Frame Skipping**: Processes every 3rd frame for OCR
+- **Multithreading**: Separate threads for capture, OCR, and translation
+- **Queue Management**: Non-blocking queues prevent bottlenecks
+- **Memory Optimization**: LRU caching and efficient preprocessing
+
+### Accuracy Improvements
+- **Enhanced Preprocessing**: CLAHE, Gaussian blur, morphological operations
+- **Character Whitelist**: Filters out noise characters
+- **Confidence Filtering**: Minimum 40% confidence threshold
+- **Size Filtering**: Removes very small text detections
+- **Optimized Tesseract Config**: OEM 3, PSM 6 for better recognition
+
+## Setup Instructions
+
+### For Raspberry Pi:
+```bash
+# Run the setup script
+python3 setup_pi.py
+
+# Or manual setup:
+sudo apt update
+sudo apt install -y tesseract-ocr tesseract-ocr-eng
+pip3 install -r requirements.txt
+
+# Enable camera and increase GPU memory
+sudo raspi-config
+# Navigate to: Interface Options > Camera > Enable
+# Navigate to: Advanced Options > Memory Split > 128
 ```
-python3 -m venv venv
-source venv/bin/activate
+
+### For other systems:
+```bash
 pip install -r requirements.txt
 ```
-3. Run:
-```
-python main.py
-```
 
-## Setup (Raspberry Pi)
-```
-sudo apt update
-sudo apt install -y tesseract-ocr libtesseract-dev libjpeg-dev zlib1g-dev
-pip3 install -r requirements.txt
+## Usage
+
+```bash
 python3 main.py
 ```
 
-## Git push (local)
+Press 'q' to quit.
+
+## Configuration
+
+Edit `config.py` to adjust:
+- Camera resolution and FPS
+- OCR confidence thresholds
+- Frame processing intervals
+- Translation cache settings
+
+## Performance Tips for Pi
+
+1. **Increase GPU Memory**: Set to 128MB minimum
+2. **Use Fast SD Card**: Class 10 or better
+3. **Proper Cooling**: Prevent thermal throttling
+4. **Close Unnecessary Services**: Free up CPU/memory
+5. **Use Lite OS**: Raspberry Pi OS Lite for headless operation
+
+## Troubleshooting
+
+### Low Frame Rate
+- Reduce `CAMERA_WIDTH` and `CAMERA_HEIGHT` in config.py
+- Increase `OCR_FRAME_SKIP` value
+- Lower `CAMERA_FPS`
+
+### Poor OCR Accuracy
+- Ensure good lighting conditions
+- Adjust `OCR_MIN_CONFIDENCE` threshold
+- Check camera focus
+- Modify preprocessing parameters in `ocr.py`
+
+### Memory Issues
+- Reduce queue sizes in config.py
+- Lower translation cache size
+- Close other applications
+
+## Architecture
+
 ```
-git clone https://github.com/Kshitij-0007/AR_Glasses.git
-cd AR_Glasses
-# copy files into this folder, then:
-git add .
-git commit -m "Initial AR_Glasses prototype"
-git push origin main
+Camera Thread → Frame Queue → OCR Thread → OCR Queue → Translation Thread → Result Queue → Display
 ```
 
+Each component runs independently with non-blocking communication for optimal performance.

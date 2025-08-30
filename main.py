@@ -1,58 +1,104 @@
 import time
+import threading
+import queue
 from capture import CaptureThread
-from ocr import ocr_detect
-from translate import translate_text
-from display import overlay_results
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from ocr import OCRProcessor
+from translate import TranslationProcessor
+from display import DisplayProcessor
 import cv2
+import config
 
-def main(target_lang='hi'):
-    cap_thread = CaptureThread(src=0, width=1280, height=720)
-    cap_thread.start()
-
-    ocr_pool = ThreadPoolExecutor(max_workers=2)
-    translate_pool = ThreadPoolExecutor(max_workers=2)
-
-    last_run = 0
-    ocr_interval = 0.5  # seconds between OCR runs
-
-    try:
-        while True:
-            frame = cap_thread.read()
-            if frame is None:
-                time.sleep(0.01)
+class ARGlassesApp:
+    def __init__(self, target_lang='hi', camera_src=0):
+        self.capture = CaptureThread(src=camera_src, 
+                                   width=config.CAMERA_WIDTH, 
+                                   height=config.CAMERA_HEIGHT)
+        self.ocr_processor = OCRProcessor()
+        self.translation_processor = TranslationProcessor(target_lang)
+        self.display_processor = DisplayProcessor()
+        
+        # Thread-safe queues
+        self.frame_queue = queue.Queue(maxsize=config.MAX_QUEUE_SIZE)
+        self.ocr_queue = queue.Queue(maxsize=config.MAX_QUEUE_SIZE)
+        self.result_queue = queue.Queue(maxsize=config.MAX_QUEUE_SIZE)
+        
+        self.running = True
+        self.current_results = []
+        
+    def start(self):
+        self.capture.start()
+        
+        # Start processing threads
+        threading.Thread(target=self._ocr_worker, daemon=True).start()
+        threading.Thread(target=self._translation_worker, daemon=True).start()
+        
+        self._main_loop()
+        
+    def _ocr_worker(self):
+        while self.running:
+            try:
+                frame = self.frame_queue.get(timeout=config.WORKER_TIMEOUT)
+                results = self.ocr_processor.process(frame)
+                if results:
+                    try:
+                        self.ocr_queue.put_nowait(results)
+                    except queue.Full:
+                        pass
+            except queue.Empty:
                 continue
-
-            now = time.time()
-            ocr_results = []
-            translations = []
-            # Run OCR at a fixed interval to save CPU
-            if now - last_run >= ocr_interval:
-                last_run = now
-                # submit OCR job
-                future = ocr_pool.submit(ocr_detect, frame)
-                ocr_results = future.result()
-
-                # submit translation jobs for each detected text
-                trans_futures = [translate_pool.submit(translate_text, t[0], target_lang) for t in ocr_results]
-                for f in trans_futures:
-                    translations.append(f.result())
-
-            # overlay on the latest frame
-            out = overlay_results(frame, ocr_results, translations)
-            cv2.imshow('AR_Glasses - press q to quit', out)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                break
-
-    except KeyboardInterrupt:
-        pass
-    finally:
-        cap_thread.stop()
-        ocr_pool.shutdown(wait=False)
-        translate_pool.shutdown(wait=False)
+                
+    def _translation_worker(self):
+        while self.running:
+            try:
+                ocr_results = self.ocr_queue.get(timeout=config.WORKER_TIMEOUT)
+                translated = self.translation_processor.process(ocr_results)
+                try:
+                    self.result_queue.put_nowait(translated)
+                except queue.Full:
+                    pass
+            except queue.Empty:
+                continue
+                
+    def _main_loop(self):
+        frame_skip = 0
+        try:
+            while self.running:
+                frame = self.capture.read()
+                if frame is None:
+                    time.sleep(0.01)
+                    continue
+                
+                # Process every Nth frame for OCR
+                frame_skip += 1
+                if frame_skip % config.OCR_FRAME_SKIP == 0:
+                    try:
+                        self.frame_queue.put_nowait(frame)
+                    except queue.Full:
+                        pass
+                
+                # Get latest results
+                try:
+                    self.current_results = self.result_queue.get_nowait()
+                except queue.Empty:
+                    pass
+                
+                # Display
+                display_frame = self.display_processor.overlay(frame, self.current_results)
+                cv2.imshow('AR Glasses - Press q to quit', display_frame)
+                
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+                    
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.stop()
+            
+    def stop(self):
+        self.running = False
+        self.capture.stop()
         cv2.destroyAllWindows()
 
 if __name__ == '__main__':
-    # change 'hi' to any language code like 'en', 'es', 'fr', etc.
-    main(target_lang='hi')
+    app = ARGlassesApp(target_lang='hi')
+    app.start()
