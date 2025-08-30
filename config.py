@@ -9,9 +9,9 @@ CAMERA_HEIGHT = 480
 CAMERA_FPS = 15
 
 # OCR settings
-OCR_MIN_CONFIDENCE = 40
-OCR_FRAME_SKIP = 3  # Process every 3rd frame
-OCR_MIN_TEXT_SIZE = (20, 10)  # Minimum width, height for text detection
+OCR_MIN_CONFIDENCE = 60  # Higher for better accuracy
+OCR_FRAME_SKIP = 2  # Process every 2nd frame for better responsiveness
+OCR_MIN_TEXT_SIZE = (30, 15)  # Minimum width, height for text detection
 
 # Threading settings
 MAX_QUEUE_SIZE = 2
